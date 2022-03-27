@@ -4,7 +4,8 @@
   border: 0;
   font-size: 100%;
   font: inherit;
-  vertical-align: baseline;  
+  vertical-align: baseline;
+  overflow-y: scroll;
 }
 
 article, aside, details, figcaption, figure,
@@ -41,7 +42,7 @@ table {
 html, body {
   width: 100%;
   height: 100%;
-  overflow: hidden;
+ /* overflow: hidden;*/
 }
 
 body {
@@ -55,7 +56,7 @@ body {
 #particles {
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  /*overflow: hidden;*/
 }
 
 #intro {
