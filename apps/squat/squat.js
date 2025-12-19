@@ -1,6 +1,8 @@
-const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
+
+const cameraVideo = document.getElementById("cameraVideo");
+const playbackVideo = document.getElementById("playbackVideo");
 
 const mirrorToggle = document.getElementById("mirrorToggle");
 const stateText = document.getElementById("stateText");
@@ -33,6 +35,8 @@ const scrub = document.getElementById("scrub");
 const playbackTime = document.getElementById("playbackTime");
 const playbackDur = document.getElementById("playbackDur");
 
+let activeVideo = cameraVideo;
+
 let currentExercise = "squat";
 let currentMode = "live";
 
@@ -62,10 +66,22 @@ function resetSession() {
   verdictText.textContent = "—";
 }
 
+function setActive(which) {
+  if (which === "camera") {
+    activeVideo = cameraVideo;
+    cameraVideo.classList.remove("hidden");
+    playbackVideo.classList.add("hidden");
+  } else {
+    activeVideo = playbackVideo;
+    playbackVideo.classList.remove("hidden");
+    cameraVideo.classList.add("hidden");
+  }
+}
+
 function resizeCanvas() {
-  if (!video.videoWidth || !video.videoHeight) return;
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  if (!activeVideo.videoWidth || !activeVideo.videoHeight) return;
+  canvas.width = activeVideo.videoWidth;
+  canvas.height = activeVideo.videoHeight;
 }
 
 function draw(results) {
@@ -124,37 +140,22 @@ function stopRaf() {
 
 function stopStreamTracks(s) {
   if (!s) return;
-  try {
-    s.getTracks().forEach((t) => t.stop());
-  } catch {}
+  try { s.getTracks().forEach((t) => t.stop()); } catch {}
 }
 
-function hardResetVideoElement() {
-  try { video.pause(); } catch {}
-  video.controls = false;
+function clearPlaybackVideo() {
+  try { playbackVideo.pause(); } catch {}
+  playbackVideo.controls = false;
+  playbackVideo.removeAttribute("src");
+  playbackVideo.load();
+}
 
-  if (video.srcObject) {
-    try {
-      stopStreamTracks(video.srcObject);
-    } catch {}
-    video.srcObject = null;
+function clearCameraVideo() {
+  if (cameraVideo.srcObject) {
+    stopStreamTracks(cameraVideo.srcObject);
+    cameraVideo.srcObject = null;
   }
-
-  video.removeAttribute("src");
-  video.load();
-}
-
-async function setVideoToStream(s) {
-  hardResetVideoElement();
-  video.srcObject = s;
-  await video.play();
-}
-
-async function setVideoToBlobUrl(url) {
-  hardResetVideoElement();
-  video.src = url;
-  video.controls = true;
-  await video.play().catch(() => {});
+  try { cameraVideo.pause(); } catch {}
 }
 
 function pickMimeType() {
@@ -179,16 +180,15 @@ async function stopAllVideo() {
   }
   mediaRecorder = null;
 
-  if (cameraHelper) {
-    cameraHelper = null;
-  }
+  cameraHelper = null;
 
   if (stream) {
     stopStreamTracks(stream);
     stream = null;
   }
 
-  hardResetVideoElement();
+  clearCameraVideo();
+  clearPlaybackVideo();
 
   runningLive = false;
 }
@@ -228,13 +228,15 @@ async function startLive() {
     await stopAllVideo();
     await ensurePose();
 
+    setActive("camera");
+
     runningLive = true;
 
     if (typeof Camera !== "undefined" && Camera.Camera) {
-      cameraHelper = new Camera.Camera(video, {
+      cameraHelper = new Camera.Camera(cameraVideo, {
         onFrame: async () => {
           if (!runningLive) return;
-          await pose.send({ image: video });
+          await pose.send({ image: cameraVideo });
         },
         width: 1280,
         height: 720,
@@ -245,11 +247,12 @@ async function startLive() {
         video: { width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
-      await setVideoToStream(stream);
+      cameraVideo.srcObject = stream;
+      await cameraVideo.play();
 
       const loop = async () => {
         if (!runningLive) return;
-        await pose.send({ image: video });
+        await pose.send({ image: cameraVideo });
         rafId = requestAnimationFrame(loop);
       };
       rafId = requestAnimationFrame(loop);
@@ -289,12 +292,15 @@ async function startPreview() {
     await stopAllVideo();
     await ensurePose();
 
+    setActive("camera");
+
     stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false,
     });
 
-    await setVideoToStream(stream);
+    cameraVideo.srcObject = stream;
+    await cameraVideo.play();
 
     startPreviewBtn.disabled = true;
     stopPreviewBtn.disabled = false;
@@ -360,16 +366,21 @@ async function startRecording() {
         try { URL.revokeObjectURL(recordedBlobUrl); } catch {}
         recordedBlobUrl = null;
       }
-
       recordedBlobUrl = URL.createObjectURL(blob);
 
       if (stream) {
         stopStreamTracks(stream);
         stream = null;
       }
+      clearCameraVideo();
 
-      await setVideoToBlobUrl(recordedBlobUrl);
+      setActive("playback");
 
+      clearPlaybackVideo();
+      playbackVideo.src = recordedBlobUrl;
+      playbackVideo.controls = true;
+
+      await playbackVideo.play().catch(() => {});
       playbackControls.style.display = "";
       analyzeBtn.disabled = false;
       stopAnalyzeBtn.disabled = true;
@@ -404,18 +415,22 @@ function stopRecording() {
   }
 }
 
+function getPlaybackDur() {
+  return Number.isFinite(playbackVideo.duration) ? playbackVideo.duration : 0;
+}
+
 function updateScrubUi() {
-  const dur = Number.isFinite(video.duration) ? video.duration : 0;
+  const dur = getPlaybackDur();
   playbackDur.textContent = dur.toFixed(2);
-  playbackTime.textContent = (video.currentTime || 0).toFixed(2);
-  scrub.value = dur > 0 ? Math.round((video.currentTime / dur) * 1000) : 0;
+  playbackTime.textContent = (playbackVideo.currentTime || 0).toFixed(2);
+  scrub.value = dur > 0 ? Math.round((playbackVideo.currentTime / dur) * 1000) : 0;
 }
 
 function scrubToValue(v) {
-  const dur = Number.isFinite(video.duration) ? video.duration : 0;
+  const dur = getPlaybackDur();
   if (!dur) return;
   const t = (Number(v) / 1000) * dur;
-  video.currentTime = Math.max(0, Math.min(dur, t));
+  playbackVideo.currentTime = Math.max(0, Math.min(dur, t));
   updateScrubUi();
 }
 
@@ -423,6 +438,8 @@ async function analyzePlayback() {
   try {
     if (!recordedBlobUrl) throw new Error("Record a clip first.");
     await ensurePose();
+
+    setActive("playback");
 
     analyzingPlayback = true;
     analyzeBtn.disabled = true;
@@ -432,13 +449,13 @@ async function analyzePlayback() {
 
     const loop = async () => {
       if (!analyzingPlayback) return;
-      await pose.send({ image: video });
+      await pose.send({ image: playbackVideo });
       updateScrubUi();
       rafId = requestAnimationFrame(loop);
     };
 
-    if (video.paused) {
-      await video.play().catch(() => {});
+    if (playbackVideo.paused) {
+      await playbackVideo.play().catch(() => {});
     }
 
     rafId = requestAnimationFrame(loop);
@@ -472,7 +489,8 @@ async function clearClip() {
   stopAnalyzeBtn.disabled = true;
   clearClipBtn.disabled = true;
 
-  hardResetVideoElement();
+  clearPlaybackVideo();
+  setActive("camera");
   setState("idle");
 }
 
@@ -498,6 +516,7 @@ modeSelect.addEventListener("change", async () => {
   clearClipBtn.disabled = !recordedBlobUrl;
 
   playbackControls.style.display = recordedBlobUrl ? "" : "none";
+  setActive("camera");
 });
 
 startLiveBtn.addEventListener("click", startLive);
@@ -516,15 +535,16 @@ scrub.addEventListener("input", (e) => {
   scrubToValue(e.target.value);
 });
 
-video.addEventListener("timeupdate", () => {
+playbackVideo.addEventListener("timeupdate", () => {
   if (currentMode === "recorded") updateScrubUi();
 });
 
-video.addEventListener("loadedmetadata", () => {
+playbackVideo.addEventListener("loadedmetadata", () => {
   if (currentMode === "recorded") updateScrubUi();
 });
 
 setExercise(exerciseSelect.value);
 setUiForMode(modeSelect.value);
+setActive("camera");
 setState("idle");
 resetSession();
