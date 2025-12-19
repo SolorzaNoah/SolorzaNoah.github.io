@@ -53,7 +53,7 @@ async function onResults(results) {
 }
 
 function makePose() {
-  const p = new Pose.Pose({
+  const p = new Pose({
     locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`,
   });
 
@@ -67,6 +67,7 @@ function makePose() {
   p.onResults(onResults);
   return p;
 }
+
 
 async function startWithGetUserMedia() {
   stream = await navigator.mediaDevices.getUserMedia({
