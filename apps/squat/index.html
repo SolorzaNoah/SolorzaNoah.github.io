@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Squat Form Checker</title>
+
+    <!-- reuse site CSS -->
+    <link rel="stylesheet" href="../../css/style.css" />
+
+    <!-- MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+    <style>
+      .wrap { max-width: 960px; margin: 0 auto; padding: 20px; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+      .stage { position: relative; border: 1px solid #222; border-radius: 12px; overflow: hidden; }
+      video, canvas { width: 100%; height: auto; display: block; }
+      canvas { position: absolute; inset: 0; }
+      .pill { padding: 6px 10px; border: 1px solid #222; border-radius: 999px; }
+    </style>
+  </head>
+
+  <body>
+    <div class="wrap">
+      <a href="../../index.html">← Back</a>
+      <h1>Squat Form Checker</h1>
+
+      <div class="row">
+        <button id="startBtn">Start Camera</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <label class="pill">
+          <input id="mirrorToggle" type="checkbox" checked />
+          Mirror
+        </label>
+      </div>
+
+      <div class="row">
+        <div class="pill">State: <span id="stateText">idle</span></div>
+        <div class="pill">Reps: <span id="repCount">0</span></div>
+        <div class="pill">Last rep: <span id="verdict">—</span></div>
+      </div>
+
+      <div class="stage">
+        <video id="video" playsinline></video>
+        <canvas id="canvas"></canvas>
+      </div>
+    </div>
+
+    <script src="squat.js"></script>
+  </body>
+</html>
