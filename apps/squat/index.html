@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="../../css/style.css" />
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
     <style>
@@ -38,9 +37,6 @@
       video, canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
       canvas { position: absolute; inset: 0; pointer-events: none; }
 
-      .videoLayer { position: absolute; inset: 0; }
-      .hidden { display: none; }
-
       .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.08); }
       .select { border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.08); color: #fff; padding: 10px 12px; border-radius: 12px; font-weight: 800; }
       .btn { appearance: none; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.10); color: #fff; padding: 10px 14px; border-radius: 12px; font-weight: 800; cursor: pointer; }
@@ -50,12 +46,12 @@
       .btnPrimary:hover { background: #fff; }
       .btnDanger { background: rgba(232,57,81,0.18); border-color: rgba(232,57,81,0.35); }
       .btnDanger:hover { background: rgba(232,57,81,0.25); }
-
       .toggle { display: inline-flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); }
       .toggle input { transform: scale(1.1); }
 
       .controls { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px; }
-      .playback { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+
+      .playback { display: none; flex-direction: column; gap: 10px; padding: 12px; border-top: 1px solid rgba(255,255,255,0.08); }
       .slider { width: 100%; }
       .miniRow { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; color: rgba(255,255,255,0.75); font-size: 12px; }
 
@@ -119,35 +115,27 @@
 
           <div class="stage">
             <div class="stageSizer">
-              <video id="cameraVideo" class="videoLayer" playsinline muted></video>
-              <video id="playbackVideo" class="videoLayer hidden" playsinline muted></video>
+              <video id="cameraVideo" playsinline muted></video>
+              <video id="playbackVideo" playsinline muted style="display:none;"></video>
               <canvas id="canvas"></canvas>
             </div>
           </div>
 
           <div class="controls" id="liveControls">
-            <button id="startLiveBtn" class="btn btnPrimary">Start Live</button>
-            <button id="stopLiveBtn" class="btn" disabled>Stop</button>
+            <button id="liveToggleBtn" class="btn btnPrimary">Start</button>
           </div>
 
           <div class="controls" id="recordControls" style="display:none;">
-            <button id="startPreviewBtn" class="btn btnPrimary">Start Preview</button>
-            <button id="startRecBtn" class="btn" disabled>Start Recording</button>
-            <button id="stopRecBtn" class="btn btnDanger" disabled>Stop Recording</button>
-            <button id="stopPreviewBtn" class="btn" disabled>Stop</button>
+            <button id="recordToggleBtn" class="btn btnPrimary">Record</button>
+            <button id="newClipBtn" class="btn" disabled>New Clip</button>
           </div>
 
-          <div class="playback" id="playbackControls" style="display:none;">
+          <div class="playback" id="playbackControls">
             <div class="miniRow">
               <div>Playback</div>
               <div><span id="playbackTime">0.00</span>s / <span id="playbackDur">0.00</span>s</div>
             </div>
             <input id="scrub" class="slider" type="range" min="0" max="1000" value="0" />
-            <div class="controls" style="padding:0;">
-              <button id="analyzeBtn" class="btn btnPrimary" disabled>Analyze Playback</button>
-              <button id="stopAnalyzeBtn" class="btn" disabled>Stop Analyze</button>
-              <button id="clearClipBtn" class="btn" disabled>Clear Clip</button>
-            </div>
           </div>
         </div>
 
@@ -175,9 +163,10 @@
             <div class="rules">
               <h2>Workflow</h2>
               <ul>
-                <li>Record + Review is meant for squat/bench/deadlift sets.</li>
-                <li>You record, then scrub and analyze on playback.</li>
-                <li>Nothing uploads. Recording stays in memory.</li>
+                <li>Live: one button start/stop.</li>
+                <li>Record + Review: entering mode starts preview automatically.</li>
+                <li>Record starts instantly; Stop switches to playback and auto-analyzes.</li>
+                <li>Lift selection is ready; rules come next.</li>
               </ul>
             </div>
           </div>

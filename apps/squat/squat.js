@@ -19,23 +19,13 @@ const liveControls = document.getElementById("liveControls");
 const recordControls = document.getElementById("recordControls");
 const playbackControls = document.getElementById("playbackControls");
 
-const startLiveBtn = document.getElementById("startLiveBtn");
-const stopLiveBtn = document.getElementById("stopLiveBtn");
-
-const startPreviewBtn = document.getElementById("startPreviewBtn");
-const startRecBtn = document.getElementById("startRecBtn");
-const stopRecBtn = document.getElementById("stopRecBtn");
-const stopPreviewBtn = document.getElementById("stopPreviewBtn");
-
-const analyzeBtn = document.getElementById("analyzeBtn");
-const stopAnalyzeBtn = document.getElementById("stopAnalyzeBtn");
-const clearClipBtn = document.getElementById("clearClipBtn");
+const liveToggleBtn = document.getElementById("liveToggleBtn");
+const recordToggleBtn = document.getElementById("recordToggleBtn");
+const newClipBtn = document.getElementById("newClipBtn");
 
 const scrub = document.getElementById("scrub");
 const playbackTime = document.getElementById("playbackTime");
 const playbackDur = document.getElementById("playbackDur");
-
-let activeVideo = cameraVideo;
 
 let currentExercise = "squat";
 let currentMode = "live";
@@ -43,92 +33,22 @@ let currentMode = "live";
 let pose = null;
 
 let stream = null;
-let cameraHelper = null;
-
-let runningLive = false;
+let rafId = null;
 
 let mediaRecorder = null;
 let recordedChunks = [];
 let recordedBlobUrl = null;
 
-let analyzingPlayback = false;
-let rafId = null;
-
-let repCount = 0;
+let state = "idle";
 
 function setState(s) {
+  state = s;
   stateText.textContent = s;
 }
 
 function resetSession() {
-  repCount = 0;
   repCountText.textContent = "0";
   verdictText.textContent = "—";
-}
-
-function setActive(which) {
-  if (which === "camera") {
-    activeVideo = cameraVideo;
-    cameraVideo.classList.remove("hidden");
-    playbackVideo.classList.add("hidden");
-  } else {
-    activeVideo = playbackVideo;
-    playbackVideo.classList.remove("hidden");
-    cameraVideo.classList.add("hidden");
-  }
-}
-
-function resizeCanvas() {
-  if (!activeVideo.videoWidth || !activeVideo.videoHeight) return;
-  canvas.width = activeVideo.videoWidth;
-  canvas.height = activeVideo.videoHeight;
-}
-
-function draw(results) {
-  resizeCanvas();
-
-  ctx.save();
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (mirrorToggle.checked) {
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
-  }
-
-  ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
-
-  if (results.poseLandmarks) {
-    drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { lineWidth: 3 });
-    drawLandmarks(ctx, results.poseLandmarks, { radius: 3 });
-  }
-
-  ctx.restore();
-}
-
-async function onResults(results) {
-  if (currentMode === "live" && !runningLive) return;
-  if (currentMode === "recorded" && !analyzingPlayback && !stream) return;
-  draw(results);
-}
-
-function makePose() {
-  const p = new Pose({
-    locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`,
-  });
-
-  p.setOptions({
-    modelComplexity: 1,
-    smoothLandmarks: true,
-    minDetectionConfidence: 0.6,
-    minTrackingConfidence: 0.6,
-  });
-
-  p.onResults(onResults);
-  return p;
-}
-
-async function ensurePose() {
-  if (!pose) pose = makePose();
 }
 
 function stopRaf() {
@@ -143,36 +63,65 @@ function stopStreamTracks(s) {
   try { s.getTracks().forEach((t) => t.stop()); } catch {}
 }
 
-function clearPlaybackVideo() {
-  try { playbackVideo.pause(); } catch {}
-  playbackVideo.controls = false;
-  playbackVideo.removeAttribute("src");
-  playbackVideo.load();
+function showCamera() {
+  cameraVideo.style.display = "";
+  playbackVideo.style.display = "none";
 }
 
-function clearCameraVideo() {
-  if (cameraVideo.srcObject) {
-    stopStreamTracks(cameraVideo.srcObject);
-    cameraVideo.srcObject = null;
+function showPlayback() {
+  playbackVideo.style.display = "";
+  cameraVideo.style.display = "none";
+}
+
+function resizeCanvasFrom(videoEl) {
+  if (!videoEl.videoWidth || !videoEl.videoHeight) return;
+  if (canvas.width === videoEl.videoWidth && canvas.height === videoEl.videoHeight) return;
+  canvas.width = videoEl.videoWidth;
+  canvas.height = videoEl.videoHeight;
+}
+
+function draw(results) {
+  const img = results.image;
+  const w = canvas.width;
+  const h = canvas.height;
+
+  ctx.save();
+  ctx.clearRect(0, 0, w, h);
+
+  if (mirrorToggle.checked) {
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
   }
-  try { cameraVideo.pause(); } catch {}
-}
 
-function pickMimeType() {
-  const types = [
-    "video/webm;codecs=vp9",
-    "video/webm;codecs=vp8",
-    "video/webm",
-    "video/mp4",
-  ];
-  for (const t of types) {
-    if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+  ctx.drawImage(img, 0, 0, w, h);
+
+  if (results.poseLandmarks) {
+    drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { lineWidth: 3 });
+    drawLandmarks(ctx, results.poseLandmarks, { radius: 3 });
   }
-  return "";
+
+  ctx.restore();
 }
 
-async function stopAllVideo() {
-  analyzingPlayback = false;
+async function onResults(results) {
+  draw(results);
+}
+
+function ensurePose() {
+  if (pose) return;
+  pose = new Pose({
+    locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`,
+  });
+  pose.setOptions({
+    modelComplexity: 1,
+    smoothLandmarks: true,
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.6,
+  });
+  pose.onResults(onResults);
+}
+
+async function stopEverything() {
   stopRaf();
 
   if (mediaRecorder && mediaRecorder.state !== "inactive") {
@@ -180,17 +129,221 @@ async function stopAllVideo() {
   }
   mediaRecorder = null;
 
-  cameraHelper = null;
-
   if (stream) {
     stopStreamTracks(stream);
     stream = null;
   }
 
-  clearCameraVideo();
-  clearPlaybackVideo();
+  if (cameraVideo.srcObject) {
+    try { cameraVideo.pause(); } catch {}
+    stopStreamTracks(cameraVideo.srcObject);
+    cameraVideo.srcObject = null;
+  }
 
-  runningLive = false;
+  try { playbackVideo.pause(); } catch {}
+  playbackVideo.removeAttribute("src");
+  playbackVideo.load();
+
+  if (pose) {
+    try { pose.close(); } catch {}
+    pose = null;
+  }
+}
+
+async function startCameraPreview() {
+  if (!window.isSecureContext) throw new Error("Not secure. Use https:// (or localhost).");
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error("getUserMedia unavailable.");
+
+  ensurePose();
+
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: false,
+  });
+
+  cameraVideo.srcObject = stream;
+  await cameraVideo.play();
+
+  showCamera();
+}
+
+function startPoseLoopOn(videoEl, modeLabel) {
+  stopRaf();
+  setState(modeLabel);
+
+  const loop = async () => {
+    if (state !== modeLabel) return;
+    resizeCanvasFrom(videoEl);
+    await pose.send({ image: videoEl });
+    rafId = requestAnimationFrame(loop);
+  };
+
+  rafId = requestAnimationFrame(loop);
+}
+
+function updateScrubUi() {
+  const dur = Number.isFinite(playbackVideo.duration) ? playbackVideo.duration : 0;
+  playbackDur.textContent = dur.toFixed(2);
+  playbackTime.textContent = (playbackVideo.currentTime || 0).toFixed(2);
+  scrub.value = dur > 0 ? Math.round((playbackVideo.currentTime / dur) * 1000) : 0;
+}
+
+function scrubToValue(v) {
+  const dur = Number.isFinite(playbackVideo.duration) ? playbackVideo.duration : 0;
+  if (!dur) return;
+  const t = (Number(v) / 1000) * dur;
+  playbackVideo.currentTime = Math.max(0, Math.min(dur, t));
+  updateScrubUi();
+}
+
+function pickMimeType() {
+  const types = [
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8",
+    "video/webm",
+  ];
+  for (const t of types) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return "";
+}
+
+async function liveToggle() {
+  if (state === "live") {
+    await stopEverything();
+    liveToggleBtn.textContent = "Start";
+    setState("idle");
+    return;
+  }
+
+  try {
+    await stopEverything();
+    resetSession();
+
+    await startCameraPreview();
+    startPoseLoopOn(cameraVideo, "live");
+
+    liveToggleBtn.textContent = "Stop";
+  } catch (e) {
+    await stopEverything();
+    liveToggleBtn.textContent = "Start";
+    setState(`error: ${e && e.message ? e.message : String(e)}`);
+  }
+}
+
+async function enterRecordedMode() {
+  await stopEverything();
+  resetSession();
+
+  recordToggleBtn.textContent = "Record";
+  recordToggleBtn.classList.add("btnPrimary");
+  recordToggleBtn.classList.remove("btnDanger");
+  newClipBtn.disabled = true;
+
+  playbackControls.style.display = "none";
+
+  try {
+    await startCameraPreview();
+    startPoseLoopOn(cameraVideo, "preview");
+  } catch (e) {
+    await stopEverything();
+    setState(`error: ${e && e.message ? e.message : String(e)}`);
+  }
+}
+
+async function startRecording() {
+  if (!stream) throw new Error("No preview stream.");
+
+  recordedChunks = [];
+
+  const mimeType = pickMimeType();
+  mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+  };
+
+  mediaRecorder.onstop = async () => {
+    const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "video/webm" });
+
+    if (recordedBlobUrl) {
+      try { URL.revokeObjectURL(recordedBlobUrl); } catch {}
+      recordedBlobUrl = null;
+    }
+    recordedBlobUrl = URL.createObjectURL(blob);
+
+    stopRaf();
+
+    if (cameraVideo.srcObject) {
+      try { cameraVideo.pause(); } catch {}
+      stopStreamTracks(cameraVideo.srcObject);
+      cameraVideo.srcObject = null;
+    }
+    if (stream) {
+      stopStreamTracks(stream);
+      stream = null;
+    }
+
+    playbackVideo.src = recordedBlobUrl;
+    playbackVideo.controls = true;
+
+    showPlayback();
+    playbackControls.style.display = "flex";
+
+    await playbackVideo.play().catch(() => {});
+    updateScrubUi();
+
+    newClipBtn.disabled = false;
+
+    ensurePose();
+    startPoseLoopOn(playbackVideo, "analyzing");
+  };
+
+  mediaRecorder.start(200);
+  recordToggleBtn.textContent = "Stop";
+  recordToggleBtn.classList.remove("btnPrimary");
+  recordToggleBtn.classList.add("btnDanger");
+  setState("recording");
+}
+
+async function stopRecording() {
+  if (!mediaRecorder) return;
+  if (mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  setState("processing...");
+}
+
+async function recordToggle() {
+  try {
+    if (state === "recording") {
+      await stopRecording();
+      return;
+    }
+
+    if (state === "analyzing") {
+      await enterRecordedMode();
+      return;
+    }
+
+    if (state === "preview") {
+      await startRecording();
+      return;
+    }
+
+    if (state === "idle" || state.startsWith("error")) {
+      await enterRecordedMode();
+      return;
+    }
+  } catch (e) {
+    setState(`error: ${e && e.message ? e.message : String(e)}`);
+  }
+}
+
+async function newClip() {
+  if (recordedBlobUrl) {
+    try { URL.revokeObjectURL(recordedBlobUrl); } catch {}
+    recordedBlobUrl = null;
+  }
+  await enterRecordedMode();
 }
 
 function setUiForMode(mode) {
@@ -201,350 +354,44 @@ function setUiForMode(mode) {
     liveControls.style.display = "";
     recordControls.style.display = "none";
     playbackControls.style.display = "none";
+    showCamera();
+    liveToggleBtn.textContent = "Start";
+    setState("idle");
   } else {
     liveControls.style.display = "none";
     recordControls.style.display = "";
-    playbackControls.style.display = recordedBlobUrl ? "" : "none";
+    showCamera();
+    setState("idle");
   }
 
-  setState("idle");
   resetSession();
 }
 
 function setExercise(ex) {
   currentExercise = ex;
-  const label = ex === "bench" ? "Bench" : ex === "deadlift" ? "Deadlift" : "Squat";
-  exerciseBadge.textContent = label;
-}
-
-async function startLive() {
-  try {
-    setState("starting...");
-    resetSession();
-
-    if (!window.isSecureContext) throw new Error("Not secure. Use https:// (or localhost).");
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error("getUserMedia unavailable.");
-
-    await stopAllVideo();
-    await ensurePose();
-
-    setActive("camera");
-
-    runningLive = true;
-
-    if (typeof Camera !== "undefined" && Camera.Camera) {
-      cameraHelper = new Camera.Camera(cameraVideo, {
-        onFrame: async () => {
-          if (!runningLive) return;
-          await pose.send({ image: cameraVideo });
-        },
-        width: 1280,
-        height: 720,
-      });
-      await cameraHelper.start();
-    } else {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      });
-      cameraVideo.srcObject = stream;
-      await cameraVideo.play();
-
-      const loop = async () => {
-        if (!runningLive) return;
-        await pose.send({ image: cameraVideo });
-        rafId = requestAnimationFrame(loop);
-      };
-      rafId = requestAnimationFrame(loop);
-    }
-
-    startLiveBtn.disabled = true;
-    stopLiveBtn.disabled = false;
-    setState("tracking");
-  } catch (e) {
-    runningLive = false;
-    setState(`error: ${e && e.message ? e.message : String(e)}`);
-    startLiveBtn.disabled = false;
-    stopLiveBtn.disabled = true;
-    await stopAllVideo();
-  }
-}
-
-async function stopLive() {
-  runningLive = false;
-  setState("stopped");
-  startLiveBtn.disabled = false;
-  stopLiveBtn.disabled = true;
-  await stopAllVideo();
-}
-
-async function startPreview() {
-  try {
-    setState("starting...");
-    resetSession();
-
-    if (!window.isSecureContext) throw new Error("Not secure. Use https:// (or localhost).");
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error("getUserMedia unavailable.");
-
-    analyzingPlayback = false;
-    stopRaf();
-
-    await stopAllVideo();
-    await ensurePose();
-
-    setActive("camera");
-
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false,
-    });
-
-    cameraVideo.srcObject = stream;
-    await cameraVideo.play();
-
-    startPreviewBtn.disabled = true;
-    stopPreviewBtn.disabled = false;
-    startRecBtn.disabled = false;
-    stopRecBtn.disabled = true;
-
-    analyzeBtn.disabled = true;
-    stopAnalyzeBtn.disabled = true;
-
-    playbackControls.style.display = recordedBlobUrl ? "" : "none";
-    clearClipBtn.disabled = !recordedBlobUrl;
-
-    setState("preview");
-  } catch (e) {
-    setState(`error: ${e && e.message ? e.message : String(e)}`);
-    await stopAllVideo();
-    startPreviewBtn.disabled = false;
-    stopPreviewBtn.disabled = true;
-    startRecBtn.disabled = true;
-    stopRecBtn.disabled = true;
-  }
-}
-
-async function stopPreview() {
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    try { mediaRecorder.stop(); } catch {}
-  }
-  await stopAllVideo();
-
-  startPreviewBtn.disabled = false;
-  stopPreviewBtn.disabled = true;
-  startRecBtn.disabled = true;
-  stopRecBtn.disabled = true;
-
-  analyzeBtn.disabled = !recordedBlobUrl;
-  stopAnalyzeBtn.disabled = true;
-  clearClipBtn.disabled = !recordedBlobUrl;
-
-  playbackControls.style.display = recordedBlobUrl ? "" : "none";
-  setState("stopped");
-}
-
-async function startRecording() {
-  try {
-    if (!stream) throw new Error("Start Preview first.");
-
-    analyzingPlayback = false;
-    stopRaf();
-
-    recordedChunks = [];
-
-    const mimeType = pickMimeType();
-    mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-    };
-
-    mediaRecorder.onstop = async () => {
-      const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "video/webm" });
-
-      if (recordedBlobUrl) {
-        try { URL.revokeObjectURL(recordedBlobUrl); } catch {}
-        recordedBlobUrl = null;
-      }
-      recordedBlobUrl = URL.createObjectURL(blob);
-
-      if (stream) {
-        stopStreamTracks(stream);
-        stream = null;
-      }
-      clearCameraVideo();
-
-      setActive("playback");
-
-      clearPlaybackVideo();
-      playbackVideo.src = recordedBlobUrl;
-      playbackVideo.controls = true;
-
-      await playbackVideo.play().catch(() => {});
-      playbackControls.style.display = "";
-      analyzeBtn.disabled = false;
-      stopAnalyzeBtn.disabled = true;
-      clearClipBtn.disabled = false;
-
-      startRecBtn.disabled = false;
-      stopRecBtn.disabled = true;
-
-      updateScrubUi();
-      setState("recorded");
-    };
-
-    mediaRecorder.start(200);
-
-    startRecBtn.disabled = true;
-    stopRecBtn.disabled = false;
-    analyzeBtn.disabled = true;
-    clearClipBtn.disabled = true;
-    setState("recording");
-  } catch (e) {
-    setState(`error: ${e && e.message ? e.message : String(e)}`);
-  }
-}
-
-function stopRecording() {
-  try {
-    if (!mediaRecorder) return;
-    if (mediaRecorder.state !== "inactive") mediaRecorder.stop();
-    setState("processing...");
-  } catch (e) {
-    setState(`error: ${e && e.message ? e.message : String(e)}`);
-  }
-}
-
-function getPlaybackDur() {
-  return Number.isFinite(playbackVideo.duration) ? playbackVideo.duration : 0;
-}
-
-function updateScrubUi() {
-  const dur = getPlaybackDur();
-  playbackDur.textContent = dur.toFixed(2);
-  playbackTime.textContent = (playbackVideo.currentTime || 0).toFixed(2);
-  scrub.value = dur > 0 ? Math.round((playbackVideo.currentTime / dur) * 1000) : 0;
-}
-
-function scrubToValue(v) {
-  const dur = getPlaybackDur();
-  if (!dur) return;
-  const t = (Number(v) / 1000) * dur;
-  playbackVideo.currentTime = Math.max(0, Math.min(dur, t));
-  updateScrubUi();
-}
-
-async function analyzePlayback() {
-  try {
-    if (!recordedBlobUrl) throw new Error("Record a clip first.");
-    await ensurePose();
-
-    setActive("playback");
-
-    analyzingPlayback = true;
-    analyzeBtn.disabled = true;
-    stopAnalyzeBtn.disabled = false;
-
-    setState("analyzing");
-
-    const loop = async () => {
-      if (!analyzingPlayback) return;
-      await pose.send({ image: playbackVideo });
-      updateScrubUi();
-      rafId = requestAnimationFrame(loop);
-    };
-
-    if (playbackVideo.paused) {
-      await playbackVideo.play().catch(() => {});
-    }
-
-    rafId = requestAnimationFrame(loop);
-  } catch (e) {
-    analyzingPlayback = false;
-    analyzeBtn.disabled = false;
-    stopAnalyzeBtn.disabled = true;
-    setState(`error: ${e && e.message ? e.message : String(e)}`);
-  }
-}
-
-function stopAnalyze() {
-  analyzingPlayback = false;
-  analyzeBtn.disabled = false;
-  stopAnalyzeBtn.disabled = true;
-  setState("recorded");
-}
-
-async function clearClip() {
-  analyzingPlayback = false;
-  stopRaf();
-
-  if (recordedBlobUrl) {
-    try { URL.revokeObjectURL(recordedBlobUrl); } catch {}
-    recordedBlobUrl = null;
-  }
-  recordedChunks = [];
-
-  playbackControls.style.display = "none";
-  analyzeBtn.disabled = true;
-  stopAnalyzeBtn.disabled = true;
-  clearClipBtn.disabled = true;
-
-  clearPlaybackVideo();
-  setActive("camera");
-  setState("idle");
-}
-
-exerciseSelect.addEventListener("change", () => {
-  setExercise(exerciseSelect.value);
+  exerciseBadge.textContent = ex === "bench" ? "Bench" : ex === "deadlift" ? "Deadlift" : "Squat";
   resetSession();
-});
+}
+
+exerciseSelect.addEventListener("change", () => setExercise(exerciseSelect.value));
 
 modeSelect.addEventListener("change", async () => {
-  await stopAllVideo();
+  await stopEverything();
   setUiForMode(modeSelect.value);
-
-  startLiveBtn.disabled = false;
-  stopLiveBtn.disabled = true;
-
-  startPreviewBtn.disabled = false;
-  stopPreviewBtn.disabled = true;
-  startRecBtn.disabled = true;
-  stopRecBtn.disabled = true;
-
-  analyzeBtn.disabled = !recordedBlobUrl;
-  stopAnalyzeBtn.disabled = true;
-  clearClipBtn.disabled = !recordedBlobUrl;
-
-  playbackControls.style.display = recordedBlobUrl ? "" : "none";
-  setActive("camera");
+  if (modeSelect.value === "recorded") {
+    await enterRecordedMode();
+  }
 });
 
-startLiveBtn.addEventListener("click", startLive);
-stopLiveBtn.addEventListener("click", stopLive);
+liveToggleBtn.addEventListener("click", liveToggle);
+recordToggleBtn.addEventListener("click", recordToggle);
+newClipBtn.addEventListener("click", newClip);
 
-startPreviewBtn.addEventListener("click", startPreview);
-stopPreviewBtn.addEventListener("click", stopPreview);
-startRecBtn.addEventListener("click", startRecording);
-stopRecBtn.addEventListener("click", stopRecording);
-
-analyzeBtn.addEventListener("click", analyzePlayback);
-stopAnalyzeBtn.addEventListener("click", stopAnalyze);
-clearClipBtn.addEventListener("click", clearClip);
-
-scrub.addEventListener("input", (e) => {
-  scrubToValue(e.target.value);
-});
-
-playbackVideo.addEventListener("timeupdate", () => {
-  if (currentMode === "recorded") updateScrubUi();
-});
-
-playbackVideo.addEventListener("loadedmetadata", () => {
-  if (currentMode === "recorded") updateScrubUi();
-});
+scrub.addEventListener("input", (e) => scrubToValue(e.target.value));
+playbackVideo.addEventListener("timeupdate", () => updateScrubUi());
+playbackVideo.addEventListener("loadedmetadata", () => updateScrubUi());
 
 setExercise(exerciseSelect.value);
 setUiForMode(modeSelect.value);
-setActive("camera");
 setState("idle");
 resetSession();
