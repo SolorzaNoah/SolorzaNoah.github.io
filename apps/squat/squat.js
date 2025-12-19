@@ -82,6 +82,7 @@ async function startWithGetUserMedia() {
   });
 
   await video.play();
+  video.setAttribute("style", "transform: scaleX(" + (mirrorToggle.checked ? "-1" : "1") + ");");
 
   const tick = async () => {
     if (!running) return;
