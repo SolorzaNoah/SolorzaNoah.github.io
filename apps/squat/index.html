@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Squat Form Checker</title>
+    <title>Form Checker</title>
 
     <link rel="stylesheet" href="../../css/style.css" />
 
@@ -16,7 +16,7 @@
       html, body { height: 100%; overflow-x: hidden; overflow-y: auto; }
       body { margin: 0; background: #0b0b0c; color: #f3f3f3; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; -webkit-overflow-scrolling: touch; }
 
-      .wrap { max-width: 1100px; margin: 0 auto; padding: 18px; padding-bottom: 40px; }
+      .wrap { max-width: 1100px; margin: 0 auto; padding: 18px; padding-bottom: 48px; }
       .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
       .back { color: #eaeaea; text-decoration: none; opacity: 0.9; }
       .back:hover { opacity: 1; text-decoration: underline; }
@@ -34,32 +34,42 @@
       .badge { padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.18); font-size: 12px; }
 
       .stage { position: relative; width: 100%; background: #000; border-bottom: 1px solid rgba(255,255,255,0.08); }
-      video, canvas { width: 100%; height: auto; display: block; }
-      canvas { position: absolute; inset: 0; }
       .stageSizer { width: 100%; aspect-ratio: 16 / 9; }
-      .stageSizer video, .stageSizer canvas { width: 100%; height: 100%; object-fit: cover; }
+      video, canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
+      canvas { position: absolute; inset: 0; pointer-events: none; }
 
-      .controls { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px; }
+      .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      .select { border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.08); color: #fff; padding: 10px 12px; border-radius: 12px; font-weight: 800; }
       .btn { appearance: none; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.10); color: #fff; padding: 10px 14px; border-radius: 12px; font-weight: 800; cursor: pointer; }
       .btn:hover { background: rgba(255,255,255,0.14); }
       .btn:disabled { opacity: 0.55; cursor: not-allowed; }
       .btnPrimary { background: rgba(255,255,255,0.92); color: #111; border-color: rgba(255,255,255,0.92); }
       .btnPrimary:hover { background: #fff; }
+      .btnDanger { background: rgba(232,57,81,0.18); border-color: rgba(232,57,81,0.35); }
+      .btnDanger:hover { background: rgba(232,57,81,0.25); }
+
       .toggle { display: inline-flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); }
       .toggle input { transform: scale(1.1); }
+
+      .controls { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px; }
+      .playback { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+      .slider { width: 100%; }
+      .miniRow { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; color: rgba(255,255,255,0.75); font-size: 12px; }
 
       .side { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
       .kpi { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       .kpiBox { padding: 12px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.10); background: rgba(0,0,0,0.18); }
       .kpiLabel { color: rgba(255,255,255,0.70); font-size: 12px; margin-bottom: 6px; }
       .kpiValue { font-size: 18px; font-weight: 900; letter-spacing: 0.2px; }
+      .kpiValueSmall { font-size: 13px; font-weight: 800; line-height: 1.25; }
+
       .rules { padding: 12px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.10); background: rgba(0,0,0,0.18); }
       .rules h2 { margin: 0 0 8px; font-size: 14px; letter-spacing: 0.2px; }
       .rules ul { margin: 0; padding-left: 18px; color: rgba(255,255,255,0.78); font-size: 13px; line-height: 1.45; }
       .footer { margin-top: 14px; color: rgba(255,255,255,0.55); font-size: 12px; text-align: center; }
 
       @media (max-width: 600px) {
-        .wrap { padding: 14px; padding-bottom: 50px; }
+        .wrap { padding: 14px; padding-bottom: 60px; }
         h1 { font-size: 20px; }
         .kpi { grid-template-columns: 1fr; }
       }
@@ -71,8 +81,8 @@
       <div class="topbar">
         <a class="back" href="../../index.html" target="_self">← Back</a>
         <div class="title">
-          <h1>Squat Form Checker</h1>
-          <p class="sub">Runs locally in your browser. No uploads.</p>
+          <h1>Form Checker</h1>
+          <p class="sub">Live or record + review. Runs locally. No uploads.</p>
         </div>
         <div style="width: 44px;"></div>
       </div>
@@ -80,10 +90,28 @@
       <div class="grid">
         <div class="card">
           <div class="cardHeader">
-            <div class="cardTitle">Camera</div>
+            <div class="cardTitle">Camera / Playback</div>
             <div class="badgeRow">
               <div class="badge">State: <span id="stateText">idle</span></div>
             </div>
+          </div>
+
+          <div class="toolbar">
+            <select id="exerciseSelect" class="select">
+              <option value="squat" selected>Squat</option>
+              <option value="bench">Bench</option>
+              <option value="deadlift">Deadlift</option>
+            </select>
+
+            <select id="modeSelect" class="select">
+              <option value="live" selected>Live</option>
+              <option value="recorded">Record + Review</option>
+            </select>
+
+            <label class="toggle">
+              <input id="mirrorToggle" type="checkbox" checked />
+              Mirror
+            </label>
           </div>
 
           <div class="stage">
@@ -93,13 +121,29 @@
             </div>
           </div>
 
-          <div class="controls">
-            <button id="startBtn" class="btn btnPrimary">Start Camera</button>
-            <button id="stopBtn" class="btn" disabled>Stop</button>
-            <label class="toggle">
-              <input id="mirrorToggle" type="checkbox" checked />
-              Mirror
-            </label>
+          <div class="controls" id="liveControls">
+            <button id="startLiveBtn" class="btn btnPrimary">Start Live</button>
+            <button id="stopLiveBtn" class="btn" disabled>Stop</button>
+          </div>
+
+          <div class="controls" id="recordControls" style="display:none;">
+            <button id="startPreviewBtn" class="btn btnPrimary">Start Preview</button>
+            <button id="startRecBtn" class="btn" disabled>Start Recording</button>
+            <button id="stopRecBtn" class="btn btnDanger" disabled>Stop Recording</button>
+            <button id="stopPreviewBtn" class="btn" disabled>Stop</button>
+          </div>
+
+          <div class="playback" id="playbackControls" style="display:none;">
+            <div class="miniRow">
+              <div>Playback</div>
+              <div><span id="playbackTime">0.00</span>s / <span id="playbackDur">0.00</span>s</div>
+            </div>
+            <input id="scrub" class="slider" type="range" min="0" max="1000" value="0" />
+            <div class="controls" style="padding:0;">
+              <button id="analyzeBtn" class="btn btnPrimary" disabled>Analyze Playback</button>
+              <button id="stopAnalyzeBtn" class="btn" disabled>Stop Analyze</button>
+              <button id="clearClipBtn" class="btn" disabled>Clear Clip</button>
+            </div>
           </div>
         </div>
 
@@ -107,7 +151,8 @@
           <div class="cardHeader">
             <div class="cardTitle">Session</div>
             <div class="badgeRow">
-              <div class="badge">Live</div>
+              <div class="badge" id="exerciseBadge">Squat</div>
+              <div class="badge" id="modeBadge">Live</div>
             </div>
           </div>
 
@@ -119,24 +164,23 @@
               </div>
               <div class="kpiBox">
                 <div class="kpiLabel">Last rep</div>
-                <div class="kpiValue" id="verdict">—</div>
+                <div class="kpiValue kpiValueSmall" id="verdict">—</div>
               </div>
             </div>
 
             <div class="rules">
-              <h2>How to use</h2>
+              <h2>Workflow</h2>
               <ul>
-                <li>Side view works best (hip, knee, ankle visible).</li>
-                <li>Make sure your whole body is in frame.</li>
-                <li>Good lighting improves tracking.</li>
-                <li>Start the camera, then do slow reps.</li>
+                <li>Squat/bench/deadlift will share the same pipeline; rules differ per lift.</li>
+                <li>Record + Review lets you do the set, then analyze with playback + scrub.</li>
+                <li>Nothing uploads. Recording stays in memory unless you add download later.</li>
               </ul>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="footer">Pose tracking is client-side. Nothing is saved.</div>
+      <div class="footer">Client-side only. No storage, no uploads.</div>
     </div>
 
     <script src="squat.js"></script>
