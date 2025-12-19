@@ -7,19 +7,27 @@ const stopBtn = document.getElementById("stopBtn");
 const mirrorToggle = document.getElementById("mirrorToggle");
 
 const stateText = document.getElementById("stateText");
+const repCountText = document.getElementById("repCount");
+const lastVerdictText = document.getElementById("verdict");
 
-let camera = null;
 let pose = null;
+let cameraHelper = null;
+let stream = null;
 let running = false;
 
+function setState(s) {
+  stateText.textContent = s;
+}
+
 function resizeCanvas() {
-  if (!video.videoWidth) return;
+  if (!video.videoWidth || !video.videoHeight) return;
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
 }
 
 function draw(results) {
   resizeCanvas();
+
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -41,7 +49,7 @@ function draw(results) {
 async function onResults(results) {
   if (!running) return;
   draw(results);
-  stateText.textContent = results.poseLandmarks ? "tracking" : "no pose";
+  setState(results.poseLandmarks ? "tracking" : "no pose");
 }
 
 function makePose() {
@@ -60,14 +68,31 @@ function makePose() {
   return p;
 }
 
-async function start() {
-  if (running) return;
-  running = true;
+async function startWithGetUserMedia() {
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: false,
+  });
 
-  stateText.textContent = "starting...";
-  pose = makePose();
+  video.srcObject = stream;
 
-  camera = new Camera.Camera(video, {
+  await new Promise((resolve) => {
+    video.onloadedmetadata = () => resolve();
+  });
+
+  await video.play();
+
+  const tick = async () => {
+    if (!running) return;
+    await pose.send({ image: video });
+    requestAnimationFrame(tick);
+  };
+
+  requestAnimationFrame(tick);
+}
+
+async function startWithMediaPipeCameraHelper() {
+  cameraHelper = new Camera.Camera(video, {
     onFrame: async () => {
       await pose.send({ image: video });
     },
@@ -75,15 +100,60 @@ async function start() {
     height: 720,
   });
 
-  await camera.start();
+  await cameraHelper.start();
+}
 
-  startBtn.disabled = true;
-  stopBtn.disabled = false;
+async function start() {
+  if (running) return;
+
+  setState("starting...");
+  lastVerdictText.textContent = "—";
+
+  try {
+    if (!window.isSecureContext) {
+      throw new Error("Not a secure context. Use HTTPS or http://localhost.");
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("getUserMedia not available in this browser/context.");
+    }
+
+    pose = makePose();
+    running = true;
+
+    if (typeof Camera !== "undefined" && Camera.Camera) {
+      await startWithMediaPipeCameraHelper();
+    } else {
+      await startWithGetUserMedia();
+    }
+
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    setState("tracking");
+  } catch (e) {
+    running = false;
+    setState(`error: ${e && e.message ? e.message : String(e)}`);
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+
+    if (pose) {
+      try { pose.close(); } catch {}
+      pose = null;
+    }
+  }
 }
 
 async function stop() {
   running = false;
-  stateText.textContent = "stopped";
+  setState("stopped");
+
+  if (cameraHelper) {
+    cameraHelper = null;
+  }
+
+  if (stream) {
+    stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+  }
 
   if (video.srcObject) {
     video.srcObject.getTracks().forEach((t) => t.stop());
@@ -101,3 +171,6 @@ async function stop() {
 
 startBtn.addEventListener("click", start);
 stopBtn.addEventListener("click", stop);
+
+repCountText.textContent = "0";
+setState("idle");
